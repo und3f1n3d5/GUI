@@ -15,8 +15,6 @@ include_directories(yourbunnywrote
         ${GLUT_INCLUDE_DIRS}
         ${GLEW_INCLUDE_DIRS})
 
-add_subdirectory(external)
-
 add_executable(yourbunnywrote main.cpp imgui_draw.cpp imgui.cpp imgui.h imgui_internal.h imconfig.h imgui_demo.cpp imgui_tables.cpp
         imgui_widgets.cpp imstb_rectpack.h imstb_textedit.h imstb_truetype.h imgui_impl_opengl3.h imgui_impl_sdl.h
         imgui_impl_sdlrenderer.h imgui_impl_sdlrenderer.cpp imgui_impl_opengl3_loader.h imgui_impl_opengl3.cpp imgui_impl_sdl.cpp
