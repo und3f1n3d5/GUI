@@ -80,7 +80,11 @@ bool LoadTextureFromFile(const char* filename, Picture& pic)
 
 int selected_point = -1;
 float R = 3.0;
-static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, bool drawing, bool selecting, float scale,
+static void ShowAppCustomRendering(Picture& pic,
+                                   std::vector<Point> &points,
+                                   bool drawing,
+                                   bool selecting,
+                                   float scale,
                                    std::string& key_pressed)
 {
     static bool no_titlebar = false;
@@ -88,7 +92,7 @@ static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, boo
     static bool no_menu = false;
     static bool no_move = false;
     static bool no_resize = false;
-    static bool no_collapse = false;
+    static bool no_collapse = true;
     static bool no_close = false;
     static bool no_nav = false;
     static bool no_background = false;
@@ -131,7 +135,7 @@ static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, boo
 
     // Using InvisibleButton() as a convenience 1) it will advance the layout cursor and 2) allows us to use IsItemHovered()/IsItemActive()
     ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();      // ImDrawList API uses screen coordinates!
-    ImVec2 canvas_sz(pic.image_width / 5 * scale, pic.image_height / 5 * scale);
+    ImVec2 canvas_sz(pic.image_width * scale, pic.image_height * scale);
     if (canvas_sz.x < 50.0f) canvas_sz.x = 50.0f;
     if (canvas_sz.y < 50.0f) canvas_sz.y = 50.0f;
     ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
@@ -206,8 +210,8 @@ static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, boo
                                           origin.y + points[n].y * scale / points[n].scale), R,
                                    IM_COL32(255, 255, 0, 255));
         if (n < points.size() - 1) {
-            draw_list->AddLine(ImVec2(origin.x + points[n].x, origin.y + points[n].y),
-                           ImVec2(origin.x + points[n + 1].x, origin.y + points[n + 1].y), IM_COL32(255, 255, 0, 255),
+            draw_list->AddLine(ImVec2(origin.x + points[n].x  * scale / points[n].scale, origin.y + points[n].y * scale / points[n].scale),
+                           ImVec2(origin.x + points[n + 1].x * scale / points[n + 1].scale, origin.y + points[n + 1].y * scale / points[n + 1].scale), IM_COL32(255, 255, 0, 255),
                            1.0f);
             //draw_list->PopClipRect();
         }
@@ -274,7 +278,9 @@ void WriteFile(std::string& file, std::vector<Point>& points) {
 
 // Menus
 
-static void ShowMenuFile(std::string& key_pessed, std::vector<Point>& points, std::string &filename) {
+static void ShowMenuFile(std::string& key_pessed,
+                         std::vector<Point>& points,
+                         std::string &filename) {
     ImGuiIO& io = ImGui::GetIO();
     IMGUI_DEMO_MARKER("Menu");
     ImGui::MenuItem("(demo menu)", NULL, false, false);
@@ -351,7 +357,9 @@ static void ShowMenuFile(std::string& key_pessed, std::vector<Point>& points, st
     if (ImGui::MenuItem("Quit", "Alt+F4")) {}
 }
 
-static void ShowAppMainMenuBar(std::string& key_pressed, std::vector<Point>& points, std::string &filename)
+static void ShowAppMainMenuBar(std::string& key_pressed,
+                               std::vector<Point>& points,
+                               std::string &filename)
 {
     if (ImGui::BeginMenuBar())
     {
@@ -433,6 +441,7 @@ void ShowHintsWindow() {
     ImGui::Text("Ctrl- - Zoom out");
     ImGui::Text("PgUp - Next picture");
     ImGui::Text("PgDn - Previous picture");
+    ImGui::Text("Ctrl+Backspace - Delete all points");
     ImGui::End();
 }
 
@@ -586,7 +595,7 @@ int main(int, char**)
             }
 
             // Buttons
-            if (ImGui::Button("Select")) {
+            if (ImGui::Button("Select") || ((key_pressed == "A") &&io.KeyCtrl)) {
                 selecting = !selecting;
                 if (selecting)
                     drawing = false;
@@ -680,6 +689,10 @@ int main(int, char**)
             }
 
             // Show points
+            if (key_pressed == "Backspace" && io.KeyCtrl) {
+                points.clear();
+                selected_point = -1;
+            }
             pic_i = (pic_i + pic_num) % pic_num;
             size_t old_sz = points.size();
             if (file_found)
@@ -702,7 +715,6 @@ int main(int, char**)
                 ShowHintsWindow();
             }
 
-            ImGui::Checkbox("Demo Window", &show_demo_window);
             ImGui::End();
 
             //ImGuiWindow
