@@ -78,7 +78,10 @@ bool LoadTextureFromFile(const char* filename, Picture& pic)
     return true;
 }
 
-static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, bool drawing, float scale)
+int selected_point = -1;
+float R = 3.0;
+static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, bool drawing, bool selecting, float scale,
+                                   std::string& key_pressed)
 {
     static bool no_titlebar = false;
     static bool no_scrollbar = false;
@@ -149,22 +152,43 @@ static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, boo
     const ImVec2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
 
     // Add first and second point
-    if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && drawing)
-    {
+    if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && drawing) {
         points.emplace_back(mouse_pos_in_canvas.x, mouse_pos_in_canvas.y, scale);
     }
 
+    if (selecting && (selected_point == -1) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        for (int i=0; i < points.size(); ++i) {
+            if (std::abs(mouse_pos_in_canvas.x - points[i].x) <= R && std::abs(mouse_pos_in_canvas.y - points[i].y) < R) {
+                selected_point = i;
+                break;
+            }
+        }
+    }
+
+    if (selecting && (selected_point != -1) && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        selected_point = -1;
+    }
+
+    if (selecting && (selected_point != -1) && key_pressed == "Backspace") {
+        points.erase(points.begin() + selected_point);
+        selected_point = -1;
+    }
+
+    if (selecting && (selected_point != -1)) {
+        points[selected_point].x = mouse_pos_in_canvas.x;
+        points[selected_point].y = mouse_pos_in_canvas.y;
+    }
 
     // Context menu (under default mouse threshold)
     ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-    if (opt_enable_context_menu && drag_delta.x == 0.0f && drag_delta.y == 0.0f)
+    /*if (opt_enable_context_menu && drag_delta.x == 0.0f && drag_delta.y == 0.0f)
         ImGui::OpenPopupOnItemClick("context", ImGuiPopupFlags_MouseButtonRight);
     if (ImGui::BeginPopup("context"))
     {
         if (ImGui::MenuItem("Remove one", NULL, false, points.size() > 0)) { points.pop_back(); }
         if (ImGui::MenuItem("Remove all", NULL, false, points.size() > 0)) { points.clear(); }
         ImGui::EndPopup();
-    }
+    }*/
 
     // Draw grid + all lines in the canvas
     draw_list->PushClipRect(canvas_p0, canvas_p1, true);
@@ -177,12 +201,19 @@ static void ShowAppCustomRendering(Picture& pic, std::vector<Point> &points, boo
             draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
     }
 
-    for (int n = 0; n < points.size(); n += 1)
-        draw_list->AddCircleFilled(ImVec2(origin.x + points[n].x * scale / points[n].scale, origin.y + points[n].y * scale / points[n].scale), 3.0, IM_COL32(255, 255, 0, 255));
-    //draw_list->AddLine(ImVec2(origin.x + points[n].x, origin.y + points[n].y), ImVec2(origin.x + points[n + 1].x, origin.y + points[n + 1].y), IM_COL32(255, 255, 0, 255), 2.0f);
-    draw_list->PopClipRect();
+    for (int n = 0; n < points.size(); n += 1) {
+        draw_list->AddCircleFilled(ImVec2(origin.x + points[n].x * scale / points[n].scale,
+                                          origin.y + points[n].y * scale / points[n].scale), R,
+                                   IM_COL32(255, 255, 0, 255));
+        if (n < points.size() - 1) {
+            draw_list->AddLine(ImVec2(origin.x + points[n].x, origin.y + points[n].y),
+                           ImVec2(origin.x + points[n + 1].x, origin.y + points[n + 1].y), IM_COL32(255, 255, 0, 255),
+                           1.0f);
+            //draw_list->PopClipRect();
+        }
+    }
     //std::cout << origin.x << " " << origin.y << std::endl;
-    ImGui::Text("%f %f", origin.x, origin.y);
+    //ImGui::Text("%f %f", origin.x, origin.y);
 
     ImGui::End();
 
@@ -367,6 +398,44 @@ static void AddButton(ImGuiIO& io) {
     ImGui::Text("Pressed %d times.", pressed_count);
 }
 
+void ShowHintsWindow() {
+    static bool no_titlebar = false;
+    static bool no_scrollbar = false;
+    static bool no_menu = false;
+    static bool no_move = false;
+    static bool no_resize = false;
+    static bool no_collapse = false;
+    static bool no_close = false;
+    static bool no_nav = false;
+    static bool no_background = false;
+    static bool no_bring_to_front = false;
+    static bool unsaved_document = false;
+    bool open = false;
+
+    ImGuiWindowFlags window_flags = 0;
+    if (no_titlebar)        window_flags |= ImGuiWindowFlags_NoTitleBar;
+    if (no_scrollbar)       window_flags |= ImGuiWindowFlags_NoScrollbar;
+    if (!no_menu)           window_flags |= ImGuiWindowFlags_MenuBar;
+    if (no_move)            window_flags |= ImGuiWindowFlags_NoMove;
+    if (no_resize)          window_flags |= ImGuiWindowFlags_NoResize;
+    if (no_collapse)        window_flags |= ImGuiWindowFlags_NoCollapse;
+    if (no_nav)             window_flags |= ImGuiWindowFlags_NoNav;
+    if (no_background)      window_flags |= ImGuiWindowFlags_NoBackground;
+    if (no_bring_to_front)  window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
+    if (unsaved_document)   window_flags |= ImGuiWindowFlags_UnsavedDocument;
+
+    //todo
+    ImGui::Begin("Hints", &open, window_flags);
+    ImGui::Text("Ctrl+D - enable/disable drawing points");
+    ImGui::Text("Ctrl+Z - Undo");
+    ImGui::Text("Ctrl+S - Save points");
+    ImGui::Text("Ctrl+ - Zoom in");
+    ImGui::Text("Ctrl- - Zoom out");
+    ImGui::Text("PgUp - Next picture");
+    ImGui::Text("PgDn - Previous picture");
+    ImGui::End();
+}
+
 // Main code
 int main(int, char**)
 {
@@ -445,10 +514,14 @@ int main(int, char**)
     // Main loop
     bool done = false;
     bool drawing = false;
+    bool selecting = false;
     bool directory_found = false;
     bool file_found = false;
     int pic_i = 0;
     float scale = 1.0;
+    bool change_dir = true;
+    bool change_file = true;
+    bool show_hints = false;
     while (!done) {
         SDL_Event event;
         while (SDL_PollEvent(&event))
@@ -513,44 +586,61 @@ int main(int, char**)
             }
 
             // Buttons
-            ImGui::Button("Select");
+            if (ImGui::Button("Select")) {
+                selecting = !selecting;
+                if (selecting)
+                    drawing = false;
+            }
             ImGui::SameLine();
-            if (ImGui::Button("+") || ((key_pressed == "+" || key_pressed == "=") &&io.KeyCtrl)) {
+            if (ImGui::Button("+") || ((key_pressed == "Equal") &&io.KeyCtrl)) {
                 scale += 0.1;
             }
             ImGui::SameLine();
-            if (ImGui::Button("-") || ((key_pressed == "-") &&io.KeyCtrl)) {
+            if (ImGui::Button("-") || ((key_pressed == "Minus") &&io.KeyCtrl)) {
                 scale -= 0.1;
                 scale = std::max(0.1f, scale);
             };
             ImGui::SameLine();
             if (ImGui::Button("Draw") || (io.KeyCtrl && key_pressed == "D")) {
                 drawing = !drawing;
+                if (drawing)
+                    selecting = false;
             }
+            ImGui::SameLine();
             if (ImGui::Button("Next Picture") || key_pressed == "PageDown") {
                 pic_i += 1;
             }
+            ImGui::SameLine();
             if (ImGui::Button("Previous picture") || key_pressed == "PageUp") {
                 pic_i -= 1;
             }
+            ImGui::SameLine();
             if (ImGui::Button("Undo") || (key_pressed == "z" && io.KeyCtrl)) {
                 if (!points.empty()) {
                     points.pop_back();
                 }
             }
+            ImGui::SameLine();
+            ImGui::Checkbox("Change input directory", &change_dir);
+            ImGui::SameLine();
+            ImGui::Checkbox("Change input file", &change_file);
+            ImGui::SameLine();
+            ImGui::Checkbox("Show hints window", &show_hints);
 
             // Images
             static char dir_name[256] = "/home/dmitrij/images";
-            ImGui::Text("Directory with pictures: ");
-            ImGui::SameLine();
-            ImGui::InputText(":", dir_name, IM_ARRAYSIZE(dir_name));
-            ImGui::SameLine();
-            if (ImGui::Button("Search directory")) {
-                try {
-                    OpenPictures(dir_name, pictures);
-                    directory_found = true;
-                } catch (...) {
-                    directory_found = false;
+            if (change_dir) {
+                ImGui::Text("Directory with pictures: ");
+                ImGui::SameLine();
+                ImGui::InputText(":", dir_name, IM_ARRAYSIZE(dir_name));
+                ImGui::SameLine();
+                if (ImGui::Button("Search directory")) {
+                    try {
+                        OpenPictures(dir_name, pictures);
+                        directory_found = true;
+                    } catch (...) {
+                        directory_found = false;
+                    }
                 }
             }
             if (pictures.empty()) {
@@ -562,20 +652,22 @@ int main(int, char**)
 
             // Points
             static char file_name[256] = "/home/dmitrij/dummy.txt";
-            ImGui::Text("File with points: ");
-            ImGui::SameLine();
+            if (change_file) {
+                ImGui::Text("File with points: ");
+                ImGui::SameLine();
 
-            ImGui::InputText(":", file_name, IM_ARRAYSIZE(file_name));
-            ImGui::SameLine();
-            if (ImGui::Button("Search file")) {
-                try {
-                    if (!std::string(file_name).empty()) {
-                        std::string file = file_name;
-                        OpenFile(file, points);
-                        file_found = true;
+                ImGui::InputText(":", file_name, IM_ARRAYSIZE(file_name));
+                ImGui::SameLine();
+                if (ImGui::Button("Search file")) {
+                    try {
+                        if (!std::string(file_name).empty()) {
+                            std::string file = file_name;
+                            OpenFile(file, points);
+                            file_found = true;
+                        }
+                    } catch (...) {
+                        file_found = false;
                     }
-                } catch (...) {
-                    file_found = false;
                 }
             }
 
@@ -591,20 +683,24 @@ int main(int, char**)
             pic_i = (pic_i + pic_num) % pic_num;
             size_t old_sz = points.size();
             if (file_found)
-                ShowAppCustomRendering(pictures[pic_i], points, drawing, scale);
+                ShowAppCustomRendering(pictures[pic_i], points, drawing, selecting, scale, key_pressed);
             if (file_found && points.size() != old_sz) {
                 std::string file = file_name;
                 WriteFile(file, points);
             }
-            ImGui::Text("Points: ");
+            /*ImGui::Text("Points: ");
             for (auto & point : points) {
                 ImGui::Text("(%f, %f)", point.x, point.y);
-            }
+            }*/
             auto ctx = ImGui::GetCurrentContext();
-            ImGui::Text("%f", ctx->CurrentWindow->FontWindowScale);
+            //ImGui::Text("%f", ctx->CurrentWindow->FontWindowScale);
 
             std::string file = file_name;
             ShowAppMainMenuBar(key_pressed, points, file);
+
+            if (show_hints) {
+                ShowHintsWindow();
+            }
 
             ImGui::Checkbox("Demo Window", &show_demo_window);
             ImGui::End();
