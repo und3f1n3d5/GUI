@@ -205,6 +205,9 @@ static void ShowAppCustomRendering(Picture& pic,
             draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
     }
 
+    std::sort(points.begin(), points.end(), [](Point& a, Point& b) {
+        return a.x / a.scale < b.x / b.scale || (a.x / a.scale == b.x / b.scale && a.y / a.scale < b.y / b.scale);
+    });
     for (int n = 0; n < points.size(); n += 1) {
         draw_list->AddCircleFilled(ImVec2(origin.x + points[n].x * scale / points[n].scale,
                                           origin.y + points[n].y * scale / points[n].scale), R,
@@ -622,12 +625,6 @@ int main(int, char**)
             ImGui::SameLine();
             if (ImGui::Button("Previous picture") || key_pressed == "PageUp") {
                 pic_i -= 1;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Undo") || (key_pressed == "z" && io.KeyCtrl)) {
-                if (!points.empty()) {
-                    points.pop_back();
-                }
             }
             ImGui::SameLine();
             ImGui::Checkbox("Change input directory", &change_dir);
