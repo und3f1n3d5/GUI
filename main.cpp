@@ -200,8 +200,7 @@ static void ShowAppCustomRendering(const Picture& pic,
 
 // Files
 
-void OpenPictures(const std::string folder, std::vector<Picture>& pictures) {
-    int pic_num = 0;
+void OpenPictures(const std::string folder, State& st) {
     //readdir
     //std::string folder = "/home/dmitrij/CLionProjects/yourbunnywrote/images";
     DIR *dir = opendir(folder.c_str());
@@ -212,16 +211,16 @@ void OpenPictures(const std::string folder, std::vector<Picture>& pictures) {
             std::string name = ent->d_name;
             if (name.ends_with(".png")) {
                 pic_names.emplace_back(ent->d_name);
-                ++pic_num;
+                ++st.pic_num;
             }
         }
     }
     else {
         fprintf(stderr, "Error opening directory\n");
     }
-    pictures.resize(pic_num);
-    for (int i = 0; i < pic_num; ++i) {
-        bool ret = LoadTextureFromFile(std::string(folder) + "/" + pic_names[i], pictures[i]);
+    st.pictures.resize(st.pic_num);
+    for (int i = 0; i < st.pic_num; ++i) {
+        bool ret = LoadTextureFromFile(std::string(folder) + "/" + pic_names[i], st.pictures[i]);
         IM_ASSERT(ret);
     }
 }
@@ -269,7 +268,7 @@ static void ShowAppMainMenuBar(State &st)
             if (ImGui::Button("Search directory")) {
                 try {
                     st.directory = dir_name;
-                    OpenPictures(st.directory, st.pictures);
+                    OpenPictures(st.directory, st);
                     st.directory_found = true;
                 } catch (...) {
                     st.directory_found = false;
@@ -542,7 +541,6 @@ int main()
             } else if (state.pictures.size() > 1 && state.pictures[0].image_texture == 0) {
                 state.pictures.erase(state.pictures.begin());
             }
-            int pic_num = state.pictures.size();
 
             if (!state.directory_found) {
                 ImGui::Text("Directory not found :(");
@@ -583,7 +581,7 @@ int main()
             if (state.key_pressed == "PageUp") {
                 state.pic_i -= 1;
             }
-            state.pic_i = (state.pic_i + pic_num) % pic_num;
+            state.pic_i = (state.pic_i + state.pic_num) % state.pic_num;
             size_t old_sz = state.points.size();
 
             ShowAppCustomRendering(state.pictures[state.pic_i], state);
