@@ -193,8 +193,6 @@ static void ShowAppCustomRendering(const Picture& pic,
             //draw_list->PopClipRect();
         }
     }
-    //std::cout << origin.x << " " << origin.y << std::endl;
-    //ImGui::Text("%f %f", origin.x, origin.y);
 
 }
 
@@ -202,6 +200,7 @@ static void ShowAppCustomRendering(const Picture& pic,
 
 void OpenPictures(const std::string folder, State& st) {
     //readdir
+    st.pic_num = 0;
     //std::string folder = "/home/dmitrij/CLionProjects/yourbunnywrote/images";
     DIR *dir = opendir(folder.c_str());
     std::vector<std::string> pic_names;
@@ -242,7 +241,6 @@ void OpenFile(const std::string file, State& st) {
 void WriteFile(std::string& file, State& st) {
     std::ofstream f;
     f.open(file);
-    std::cout << f.bad() << st.points.size();
     for (auto & point : st.points) {
         f << point.x << " " << point.y << " " << point.scale << std::endl;
     }
@@ -307,11 +305,13 @@ static void ShowAppMainMenuBar(State &st)
             // Buttons
             if (ImGui::MenuItem("Select", "Ctrl+A") || ((st.key_pressed == "A") &&io.KeyCtrl)) {
                 st.selecting = !st.selecting;
+                st.key_pressed = "";
                 if (st.selecting)
                     st.drawing = false;
             }
             if (ImGui::MenuItem("Zoom in", "Ctrl+") || ((st.key_pressed == "Equal") &&io.KeyCtrl)) {
                 st.scale += 0.1;
+                st.key_pressed = "";
             }
             if (ImGui::MenuItem("Zoom out", "Ctrl-") || ((st.key_pressed == "Minus") &&io.KeyCtrl)) {
                 st.scale -= 0.1;
@@ -324,15 +324,17 @@ static void ShowAppMainMenuBar(State &st)
             }
             if (ImGui::MenuItem("Next Picture", "PgDn") || st.key_pressed == "PageDown") {
                 st.pic_i += 1;
+                st.key_pressed = "";
             }
             if (ImGui::MenuItem("Previous picture", "PgUp") || st.key_pressed == "PageUp") {
                 st.pic_i -= 1;
+                st.key_pressed = "";
+            }
+            if (ImGui::MenuItem("Save", "Ctrl+S") || (io.KeyCtrl && st.key_pressed == "S")) {
+                WriteFile(st.file, st);
+                st.key_pressed = "";
             }
             ImGui::EndMenu();
-            if (ImGui::BeginMenu("Save", "Ctrl+S") || (io.KeyCtrl && st.key_pressed == "S")) {
-                WriteFile(st.file, st);
-                ImGui::EndMenu();
-            }
         }
         ImGui::EndMenuBar();
     }
@@ -541,6 +543,7 @@ int main()
             } else if (state.pictures.size() > 1 && state.pictures[0].image_texture == 0) {
                 state.pictures.erase(state.pictures.begin());
             }
+            state.pic_num = state.pictures.size();
 
             if (!state.directory_found) {
                 ImGui::Text("Directory not found :(");
@@ -554,21 +557,26 @@ int main()
             if (state.key_pressed == "Backspace" && io.KeyCtrl) {
                 state.points.clear();
                 selected_point = -1;
+                state.key_pressed = "";
             }
             if (io.KeyCtrl && state.key_pressed == "S") {
                 WriteFile(state.file, state);
+                state.key_pressed = "";
             }
             if (state.key_pressed == "A" && io.KeyCtrl) {
                 state.selecting = !state.selecting;
                 if (state.selecting)
                     state.drawing = false;
+                state.key_pressed = "";
             }
             if (state.key_pressed == "Equal" && io.KeyCtrl) {
                 state.scale += 0.1;
+                state.key_pressed = "";
             }
             if (state.key_pressed == "Minus" && io.KeyCtrl) {
                 state.scale -= 0.1;
                 state.scale = std::max(0.1f, state.scale);
+                state.key_pressed = "";
             }
             if (io.KeyCtrl && state.key_pressed == "D") {
                 state.drawing = !state.drawing;
@@ -577,9 +585,11 @@ int main()
             }
             if (state.key_pressed == "PageDown") {
                 state.pic_i += 1;
+                state.key_pressed = "";
             }
             if (state.key_pressed == "PageUp") {
                 state.pic_i -= 1;
+                state.key_pressed = "";
             }
             state.pic_i = (state.pic_i + state.pic_num) % state.pic_num;
             size_t old_sz = state.points.size();
