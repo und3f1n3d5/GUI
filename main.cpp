@@ -42,14 +42,30 @@ struct Picture {
     GLuint image_texture = 0;
 };
 
+struct State {
+    bool done = false;
+    bool drawing = false;
+    bool selecting = false;
+    bool directory_found = false;
+    bool file_found = false;
+    int pic_i = 0;
+    float scale = 1.0;
+    std::string file;
+    std::string directory;
+    int pic_num = 0;
+    std::vector<Picture> pictures;
+    std::vector<Point> points;
+    std::string key_pressed;
+};
+
 // Images
 
-bool LoadTextureFromFile(const char* filename, Picture& pic)
+bool LoadTextureFromFile(const std::string filename, Picture& pic)
 {
     // Load from file
     int image_width = 0;
     int image_height = 0;
-    unsigned char* image_data = stbi_load(filename, &image_width, &image_height, NULL, 4);
+    unsigned char* image_data = stbi_load(filename.c_str(), &image_width, &image_height, NULL, 4);
     if (image_data == NULL)
         return false;
 
@@ -80,40 +96,8 @@ bool LoadTextureFromFile(const char* filename, Picture& pic)
 
 int selected_point = -1;
 float R = 3.0;
-static void ShowAppCustomRendering(Picture& pic,
-                                   std::vector<Point> &points,
-                                   bool drawing,
-                                   bool selecting,
-                                   float scale,
-                                   std::string& key_pressed)
-{
-    static bool no_titlebar = false;
-    static bool no_scrollbar = false;
-    static bool no_menu = false;
-    static bool no_move = false;
-    static bool no_resize = false;
-    static bool no_collapse = true;
-    static bool no_close = false;
-    static bool no_nav = false;
-    static bool no_background = false;
-    static bool no_bring_to_front = false;
-    static bool unsaved_document = false;
-    bool open = false;
-
-    ImGuiWindowFlags window_flags = 0;
-    if (no_titlebar)        window_flags |= ImGuiWindowFlags_NoTitleBar;
-    if (no_scrollbar)       window_flags |= ImGuiWindowFlags_NoScrollbar;
-    if (!no_menu)           window_flags |= ImGuiWindowFlags_MenuBar;
-    if (no_move)            window_flags |= ImGuiWindowFlags_NoMove;
-    if (no_resize)          window_flags |= ImGuiWindowFlags_NoResize;
-    if (no_collapse)        window_flags |= ImGuiWindowFlags_NoCollapse;
-    if (no_nav)             window_flags |= ImGuiWindowFlags_NoNav;
-    if (no_background)      window_flags |= ImGuiWindowFlags_NoBackground;
-    if (no_bring_to_front)  window_flags |= ImGuiWindowFlags_NoBringToFrontOnFocus;
-    if (unsaved_document)   window_flags |= ImGuiWindowFlags_UnsavedDocument;
-
-    //todo
-    ImGui::Begin("Draw", &open, window_flags);
+static void ShowAppCustomRendering(const Picture& pic,
+                                   State& st) {
 
     auto ctx = ImGui::GetCurrentContext();
 
@@ -122,20 +106,10 @@ static void ShowAppCustomRendering(Picture& pic,
     static bool opt_enable_grid = true;
     static bool opt_enable_context_menu = true;
     static bool adding_line = false;
-    // Typically you would use a BeginChild()/EndChild() pair to benefit from a clipping region + own scrolling.
-    // Here we demonstrate that this can be replaced by simple offsetting + custom drawing + PushClipRect/PopClipRect() calls.
-    // To use a child window instead we could use, e.g:
-    //      ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));      // Disable padding
-    //      ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(50, 50, 50, 255));  // Set a background color
-    //      ImGui::BeginChild("canvas", ImVec2(0.0f, 0.0f), true, ImGuiWindowFlags_NoMove);
-    //      ImGui::PopStyleColor();
-    //      ImGui::PopStyleVar();
-    //      [...]
-    //      ImGui::EndChild();
 
     // Using InvisibleButton() as a convenience 1) it will advance the layout cursor and 2) allows us to use IsItemHovered()/IsItemActive()
     ImVec2 canvas_p0 = ImGui::GetCursorScreenPos();      // ImDrawList API uses screen coordinates!
-    ImVec2 canvas_sz(pic.image_width * scale, pic.image_height * scale);
+    ImVec2 canvas_sz(pic.image_width * st.scale, pic.image_height * st.scale);
     if (canvas_sz.x < 50.0f) canvas_sz.x = 50.0f;
     if (canvas_sz.y < 50.0f) canvas_sz.y = 50.0f;
     ImVec2 canvas_p1 = ImVec2(canvas_p0.x + canvas_sz.x, canvas_p0.y + canvas_sz.y);
@@ -156,43 +130,35 @@ static void ShowAppCustomRendering(Picture& pic,
     const ImVec2 mouse_pos_in_canvas(io.MousePos.x - origin.x, io.MousePos.y - origin.y);
 
     // Add first and second point
-    if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && drawing) {
-        points.emplace_back(mouse_pos_in_canvas.x, mouse_pos_in_canvas.y, scale);
+    if (is_hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && st.drawing) {
+        st.points.emplace_back(mouse_pos_in_canvas.x, mouse_pos_in_canvas.y, st.scale);
     }
 
-    if (selecting && (selected_point == -1) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-        for (int i=0; i < points.size(); ++i) {
-            if (std::abs(mouse_pos_in_canvas.x - points[i].x) <= R && std::abs(mouse_pos_in_canvas.y - points[i].y) < R) {
+    if (st.selecting && (selected_point == -1) && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        for (int i=0; i < st.points.size(); ++i) {
+            if (std::abs(mouse_pos_in_canvas.x - st.points[i].x) <= R && std::abs(mouse_pos_in_canvas.y - st.points[i].y) < R) {
                 selected_point = i;
                 break;
             }
         }
     }
 
-    if (selecting && (selected_point != -1) && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+    if (st.selecting && (selected_point != -1) && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
         selected_point = -1;
     }
 
-    if (selecting && (selected_point != -1) && key_pressed == "Backspace") {
-        points.erase(points.begin() + selected_point);
+    if (st.selecting && (selected_point != -1) && st.key_pressed == "Backspace") {
+        st.points.erase(st.points.begin() + selected_point);
         selected_point = -1;
     }
 
-    if (selecting && (selected_point != -1)) {
-        points[selected_point].x = mouse_pos_in_canvas.x;
-        points[selected_point].y = mouse_pos_in_canvas.y;
+    if (st.selecting && (selected_point != -1)) {
+        st.points[selected_point].x = mouse_pos_in_canvas.x;
+        st.points[selected_point].y = mouse_pos_in_canvas.y;
     }
 
     // Context menu (under default mouse threshold)
     ImVec2 drag_delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left);
-    /*if (opt_enable_context_menu && drag_delta.x == 0.0f && drag_delta.y == 0.0f)
-        ImGui::OpenPopupOnItemClick("context", ImGuiPopupFlags_MouseButtonRight);
-    if (ImGui::BeginPopup("context"))
-    {
-        if (ImGui::MenuItem("Remove one", NULL, false, points.size() > 0)) { points.pop_back(); }
-        if (ImGui::MenuItem("Remove all", NULL, false, points.size() > 0)) { points.clear(); }
-        ImGui::EndPopup();
-    }*/
 
     // Draw grid + all lines in the canvas
     draw_list->PushClipRect(canvas_p0, canvas_p1, true);
@@ -205,16 +171,24 @@ static void ShowAppCustomRendering(Picture& pic,
             draw_list->AddLine(ImVec2(canvas_p0.x, canvas_p0.y + y), ImVec2(canvas_p1.x, canvas_p0.y + y), IM_COL32(200, 200, 200, 40));
     }
 
-    std::sort(points.begin(), points.end(), [](Point& a, Point& b) {
+    /*std::sort(st.points.begin(), st.points.end(), [](Point& a, Point& b) {
         return a.x / a.scale < b.x / b.scale || (a.x / a.scale == b.x / b.scale && a.y / a.scale < b.y / b.scale);
-    });
-    for (int n = 0; n < points.size(); n += 1) {
-        draw_list->AddCircleFilled(ImVec2(origin.x + points[n].x * scale / points[n].scale,
-                                          origin.y + points[n].y * scale / points[n].scale), R,
-                                   IM_COL32(255, 255, 0, 255));
-        if (n < points.size() - 1) {
-            draw_list->AddLine(ImVec2(origin.x + points[n].x  * scale / points[n].scale, origin.y + points[n].y * scale / points[n].scale),
-                           ImVec2(origin.x + points[n + 1].x * scale / points[n + 1].scale, origin.y + points[n + 1].y * scale / points[n + 1].scale), IM_COL32(255, 255, 0, 255),
+    });*/
+    for (int n = 0; n < st.points.size(); n += 1) {
+        if (st.selecting && selected_point == n) {
+            draw_list->AddCircleFilled(ImVec2(origin.x + st.points[n].x * st.scale / st.points[n].scale,
+                                              origin.y + st.points[n].y * st.scale / st.points[n].scale), R,
+                                       IM_COL32(255, 0, 0, 255));
+        } else {
+            draw_list->AddCircleFilled(ImVec2(origin.x + st.points[n].x * st.scale / st.points[n].scale,
+                                              origin.y + st.points[n].y * st.scale / st.points[n].scale), R,
+                                       IM_COL32(255, 255, 0, 255));
+        }
+        if (n < st.points.size() - 1) {
+            draw_list->AddLine(ImVec2(origin.x + st.points[n].x  * st.scale / st.points[n].scale, origin.y +
+                                                                        st.points[n].y * st.scale / st.points[n].scale),
+                           ImVec2(origin.x + st.points[n + 1].x * st.scale / st.points[n + 1].scale, origin.y +
+                                            st.points[n + 1].y * st.scale / st.points[n + 1].scale), IM_COL32(255, 255, 0, 255),
                            1.0f);
             //draw_list->PopClipRect();
         }
@@ -222,17 +196,15 @@ static void ShowAppCustomRendering(Picture& pic,
     //std::cout << origin.x << " " << origin.y << std::endl;
     //ImGui::Text("%f %f", origin.x, origin.y);
 
-    ImGui::End();
-
 }
 
 // Files
 
-void OpenPictures(char* folder, std::vector<Picture>& pictures) {
+void OpenPictures(const std::string folder, std::vector<Picture>& pictures) {
     int pic_num = 0;
     //readdir
     //std::string folder = "/home/dmitrij/CLionProjects/yourbunnywrote/images";
-    DIR *dir = opendir(folder);
+    DIR *dir = opendir(folder.c_str());
     std::vector<std::string> pic_names;
     if (dir) {
         struct dirent *ent;
@@ -249,12 +221,12 @@ void OpenPictures(char* folder, std::vector<Picture>& pictures) {
     }
     pictures.resize(pic_num);
     for (int i = 0; i < pic_num; ++i) {
-        bool ret = LoadTextureFromFile((std::string(folder) + "/" + pic_names[i]).c_str(), pictures[i]);
+        bool ret = LoadTextureFromFile(std::string(folder) + "/" + pic_names[i], pictures[i]);
         IM_ASSERT(ret);
     }
 }
 
-void OpenFile(std::string& file, std::vector<Point>& points) {
+void OpenFile(const std::string file, State& st) {
     std::ifstream f;
     f.open(file);
     std::string str;
@@ -263,15 +235,16 @@ void OpenFile(std::string& file, std::vector<Point>& points) {
         Point point(x, 0, 1);
         f >> point.y;
         f >> point.scale;
-        points.push_back(point);
+        st.points.push_back(point);
     }
     f.close();
 }
 
-void WriteFile(std::string& file, std::vector<Point>& points) {
+void WriteFile(std::string& file, State& st) {
     std::ofstream f;
     f.open(file);
-    for (auto & point : points){
+    std::cout << f.bad() << st.points.size();
+    for (auto & point : st.points) {
         f << point.x << " " << point.y << " " << point.scale << std::endl;
     }
     f.close();
@@ -281,105 +254,86 @@ void WriteFile(std::string& file, std::vector<Point>& points) {
 
 // Menus
 
-static void ShowMenuFile(std::string& key_pessed,
-                         std::vector<Point>& points,
-                         std::string &filename) {
-    ImGuiIO& io = ImGui::GetIO();
-    IMGUI_DEMO_MARKER("Menu");
-    ImGui::MenuItem("(demo menu)", NULL, false, false);
-    if (ImGui::MenuItem("New") || (io.KeyCtrl && key_pessed == "N")) {}
-    if (ImGui::MenuItem("Open", "Ctrl+O") || (io.KeyCtrl && key_pessed == "O")) {}
-    if (ImGui::BeginMenu("Open Recent") || (io.KeyCtrl && key_pessed == "R"))
-    {
-        ImGui::MenuItem("fish_hat.c");
-        ImGui::MenuItem("fish_hat.inl");
-        ImGui::MenuItem("fish_hat.h");
-        if (ImGui::BeginMenu("More.."))
-        {
-            ImGui::MenuItem("Hello");
-            ImGui::MenuItem("Sailor");
-            ImGui::EndMenu();
-        }
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Save", "Ctrl+S") || (io.KeyCtrl && key_pessed == "S")) {
-        WriteFile(filename, points);
-    }
-    //if (ImGui::MenuItem("Save As..")) {}
-
-    ImGui::Separator();
-    IMGUI_DEMO_MARKER("Examples/Menu/Options");
-    if (ImGui::BeginMenu("Options"))
-    {
-        static bool enabled = true;
-        ImGui::MenuItem("Enabled", "", &enabled);
-        ImGui::BeginChild("child", ImVec2(0, 60), true);
-        for (int i = 0; i < 10; i++)
-            ImGui::Text("Scrolling Text %d", i);
-        ImGui::EndChild();
-        static float f = 0.5f;
-        static int n = 0;
-        ImGui::SliderFloat("Value", &f, 0.0f, 1.0f);
-        ImGui::InputFloat("Input", &f, 0.1f);
-        ImGui::Combo("Combo", &n, "Yes\0No\0Maybe\0\0");
-        ImGui::EndMenu();
-    }
-
-    IMGUI_DEMO_MARKER("Examples/Menu/Colors");
-    if (ImGui::BeginMenu("Colors"))
-    {
-        float sz = ImGui::GetTextLineHeight();
-        for (int i = 0; i < ImGuiCol_COUNT; i++)
-        {
-            const char* name = ImGui::GetStyleColorName((ImGuiCol)i);
-            ImVec2 p = ImGui::GetCursorScreenPos();
-            ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + sz, p.y + sz), ImGui::GetColorU32((ImGuiCol)i));
-            ImGui::Dummy(ImVec2(sz, sz));
-            ImGui::SameLine();
-            ImGui::MenuItem(name);
-        }
-        ImGui::EndMenu();
-    }
-
-    // Here we demonstrate appending again to the "Options" menu (which we already created above)
-    // Of course in this demo it is a little bit silly that this function calls BeginMenu("Options") twice.
-    // In a real code-base using it would make senses to use this feature from very different code locations.
-    if (ImGui::BeginMenu("Options")) // <-- Append!
-    {
-        IMGUI_DEMO_MARKER("Examples/Menu/Append to an existing menu");
-        static bool b = true;
-        ImGui::Checkbox("SomeOption", &b);
-        ImGui::EndMenu();
-    }
-
-    if (ImGui::BeginMenu("Disabled", false)) // Disabled
-    {
-        IM_ASSERT(0);
-    }
-    if (ImGui::MenuItem("Checked", NULL, true)) {}
-    if (ImGui::MenuItem("Quit", "Alt+F4")) {}
-}
-
-static void ShowAppMainMenuBar(std::string& key_pressed,
-                               std::vector<Point>& points,
-                               std::string &filename)
+static void ShowAppMainMenuBar(State &st)
 {
+    ImGuiIO& io = ImGui::GetIO();
     if (ImGui::BeginMenuBar())
     {
-        if (ImGui::BeginMenu("File"))
+        if (ImGui::BeginMenu("Input directory"))
         {
-            ShowMenuFile(key_pressed, points, filename);
+            ImGui::BeginChild("child", ImVec2(500, 60), false);
+            static char dir_name[256] = "/home/dmitrij/images";
+            ImGui::Text("Directory with pictures: ");
+            ImGui::SameLine();
+            ImGui::InputText(":", dir_name, IM_ARRAYSIZE(dir_name));
+            if (ImGui::Button("Search directory")) {
+                try {
+                    st.directory = dir_name;
+                    OpenPictures(st.directory, st.pictures);
+                    st.directory_found = true;
+                } catch (...) {
+                    st.directory_found = false;
+                }
+            }
+            if (st.pictures.empty()) {
+                st.pictures.emplace_back();
+            } else if (st.pictures.size() > 1 && st.pictures[0].image_texture == 0) {
+                st.pictures.erase(st.pictures.begin());
+            }
+            ImGui::EndChild();
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Input file")) {
+            ImGui::BeginChild("child", ImVec2(500, 60), false);
+            static char file_name[256] = "/home/dmitrij/dummy.txt";
+            ImGui::Text("File with points: ");
+            ImGui::SameLine();
+            ImGui::InputText(":", file_name, IM_ARRAYSIZE(file_name));
+            if (ImGui::Button("Search file")) {
+                try {
+                    if (!std::string(file_name).empty()) {
+                        st.file = file_name;
+                        OpenFile(st.file, st);
+                        st.file_found = true;
+                    }
+                } catch (...) {
+                    st.file_found = false;
+                }
+            }
+            ImGui::EndChild();
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Edit"))
         {
-            if (ImGui::MenuItem("Undo", "CTRL+Z")) {}
-            if (ImGui::MenuItem("Redo", "CTRL+Y", false, false)) {}  // Disabled item
-            ImGui::Separator();
-            if (ImGui::MenuItem("Cut", "CTRL+X")) {}
-            if (ImGui::MenuItem("Copy", "CTRL+C")) {}
-            if (ImGui::MenuItem("Paste", "CTRL+V")) {}
+            // Buttons
+            if (ImGui::MenuItem("Select", "Ctrl+A") || ((st.key_pressed == "A") &&io.KeyCtrl)) {
+                st.selecting = !st.selecting;
+                if (st.selecting)
+                    st.drawing = false;
+            }
+            if (ImGui::MenuItem("Zoom in", "Ctrl+") || ((st.key_pressed == "Equal") &&io.KeyCtrl)) {
+                st.scale += 0.1;
+            }
+            if (ImGui::MenuItem("Zoom out", "Ctrl-") || ((st.key_pressed == "Minus") &&io.KeyCtrl)) {
+                st.scale -= 0.1;
+                st.scale = std::max(0.1f, st.scale);
+            };
+            if (ImGui::MenuItem("Draw", "Ctrl+D") || (io.KeyCtrl && st.key_pressed == "D")) {
+                st.drawing = !st.drawing;
+                if (st.drawing)
+                    st.selecting = false;
+            }
+            if (ImGui::MenuItem("Next Picture", "PgDn") || st.key_pressed == "PageDown") {
+                st.pic_i += 1;
+            }
+            if (ImGui::MenuItem("Previous picture", "PgUp") || st.key_pressed == "PageUp") {
+                st.pic_i -= 1;
+            }
             ImGui::EndMenu();
+            if (ImGui::BeginMenu("Save", "Ctrl+S") || (io.KeyCtrl && st.key_pressed == "S")) {
+                WriteFile(st.file, st);
+                ImGui::EndMenu();
+            }
         }
         ImGui::EndMenuBar();
     }
@@ -449,7 +403,7 @@ void ShowHintsWindow() {
 }
 
 // Main code
-int main(int, char**)
+int main()
 {
     auto c = GL_RESCALE_NORMAL;
     // Setup SDL
@@ -516,33 +470,18 @@ int main(int, char**)
     bool show_child = false;
     ImVec4 clear_color = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
 
-    // Images
-    std::vector<Picture> pictures;
-    pictures.emplace_back();
-
-    // Points
-    std::vector<Point> points;
-
     // Main loop
-    bool done = false;
-    bool drawing = false;
-    bool selecting = false;
-    bool directory_found = false;
-    bool file_found = false;
-    int pic_i = 0;
-    float scale = 1.0;
-    bool change_dir = true;
-    bool change_file = true;
-    bool show_hints = false;
-    while (!done) {
+    State state;
+    state.pictures.emplace_back();
+    while (!state.done) {
         SDL_Event event;
         while (SDL_PollEvent(&event))
         {
             ImGui_ImplSDL2_ProcessEvent(&event);
             if (event.type == SDL_QUIT)
-                done = true;
+                state.done = true;
             if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_CLOSE && event.window.windowID == SDL_GetWindowID(window))
-                done = true;
+                state.done = true;
         }
 
         // Start the Dear ImGui frame
@@ -585,132 +524,76 @@ int main(int, char**)
             ImGui::Begin("Settings", &open, window_flags);// Create a window called "Hello, world!" and append into it.
 
             // Keys from keyboard
-            std::string key_pressed = "";
             struct funcs { static bool IsLegacyNativeDupe(ImGuiKey key) { return key < 512 && ImGui::GetIO().KeyMap[key] != -1; } }; // Hide Native<>ImGuiKey duplicates when both exists in the array
             const ImGuiKey key_first = (ImGuiKey)0;
-            //io.Key
             for (ImGuiKey key = key_first; key < ImGuiKey_COUNT; key = (ImGuiKey)(key + 1)) {
                 if (funcs::IsLegacyNativeDupe(key))
                     continue;
                 if (ImGui::IsKeyPressed(key)) {
-                    key_pressed = std::string(ImGui::GetKeyName(key));
+                    state.key_pressed = std::string(ImGui::GetKeyName(key));
                 }
             }
 
-            // Buttons
-            if (ImGui::Button("Select") || ((key_pressed == "A") &&io.KeyCtrl)) {
-                selecting = !selecting;
-                if (selecting)
-                    drawing = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("+") || ((key_pressed == "Equal") &&io.KeyCtrl)) {
-                scale += 0.1;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("-") || ((key_pressed == "Minus") &&io.KeyCtrl)) {
-                scale -= 0.1;
-                scale = std::max(0.1f, scale);
-            };
-            ImGui::SameLine();
-            if (ImGui::Button("Draw") || (io.KeyCtrl && key_pressed == "D")) {
-                drawing = !drawing;
-                if (drawing)
-                    selecting = false;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Next Picture") || key_pressed == "PageDown") {
-                pic_i += 1;
-            }
-            ImGui::SameLine();
-            if (ImGui::Button("Previous picture") || key_pressed == "PageUp") {
-                pic_i -= 1;
-            }
-            ImGui::SameLine();
-            ImGui::Checkbox("Change input directory", &change_dir);
-            ImGui::SameLine();
-            ImGui::Checkbox("Change input file", &change_file);
-            ImGui::SameLine();
-            ImGui::Checkbox("Show hints window", &show_hints);
+            ShowAppMainMenuBar(state);
 
-            // Images
-            static char dir_name[256] = "/home/dmitrij/images";
-            if (change_dir) {
-                ImGui::Text("Directory with pictures: ");
-                ImGui::SameLine();
-                ImGui::InputText(":", dir_name, IM_ARRAYSIZE(dir_name));
-                ImGui::SameLine();
-                if (ImGui::Button("Search directory")) {
-                    try {
-                        OpenPictures(dir_name, pictures);
-                        directory_found = true;
-                    } catch (...) {
-                        directory_found = false;
-                    }
-                }
-            }
-            if (pictures.empty()) {
-                pictures.emplace_back();
-            } else if (pictures.size() > 1 && pictures[0].image_texture == 0) {
-                pictures.erase(pictures.begin());
-            }
-            int pic_num = pictures.size();
 
-            // Points
-            static char file_name[256] = "/home/dmitrij/dummy.txt";
-            if (change_file) {
-                ImGui::Text("File with points: ");
-                ImGui::SameLine();
-
-                ImGui::InputText(":", file_name, IM_ARRAYSIZE(file_name));
-                ImGui::SameLine();
-                if (ImGui::Button("Search file")) {
-                    try {
-                        if (!std::string(file_name).empty()) {
-                            std::string file = file_name;
-                            OpenFile(file, points);
-                            file_found = true;
-                        }
-                    } catch (...) {
-                        file_found = false;
-                    }
-                }
+            if (state.pictures.empty()) {
+                state.pictures.emplace_back();
+            } else if (state.pictures.size() > 1 && state.pictures[0].image_texture == 0) {
+                state.pictures.erase(state.pictures.begin());
             }
+            int pic_num = state.pictures.size();
 
-            if (!directory_found) {
+            if (!state.directory_found) {
                 ImGui::Text("Directory not found :(");
             }
-            if (!file_found) {
+            if (!state.file_found) {
                 ImGui::Text("File not found :(");
                 ImGui::Text("Input the correct file to draw & save points");
             }
 
             // Show points
-            if (key_pressed == "Backspace" && io.KeyCtrl) {
-                points.clear();
+            if (state.key_pressed == "Backspace" && io.KeyCtrl) {
+                state.points.clear();
                 selected_point = -1;
             }
-            pic_i = (pic_i + pic_num) % pic_num;
-            size_t old_sz = points.size();
-            if (file_found)
-                ShowAppCustomRendering(pictures[pic_i], points, drawing, selecting, scale, key_pressed);
-            if (file_found && points.size() != old_sz) {
-                std::string file = file_name;
-                WriteFile(file, points);
+            if (io.KeyCtrl && state.key_pressed == "S") {
+                WriteFile(state.file, state);
             }
-            /*ImGui::Text("Points: ");
-            for (auto & point : points) {
-                ImGui::Text("(%f, %f)", point.x, point.y);
-            }*/
+            if (state.key_pressed == "A" && io.KeyCtrl) {
+                state.selecting = !state.selecting;
+                if (state.selecting)
+                    state.drawing = false;
+            }
+            if (state.key_pressed == "Equal" && io.KeyCtrl) {
+                state.scale += 0.1;
+            }
+            if (state.key_pressed == "Minus" && io.KeyCtrl) {
+                state.scale -= 0.1;
+                state.scale = std::max(0.1f, state.scale);
+            }
+            if (io.KeyCtrl && state.key_pressed == "D") {
+                state.drawing = !state.drawing;
+                if (state.drawing)
+                    state.selecting = false;
+            }
+            if (state.key_pressed == "PageDown") {
+                state.pic_i += 1;
+            }
+            if (state.key_pressed == "PageUp") {
+                state.pic_i -= 1;
+            }
+            state.pic_i = (state.pic_i + pic_num) % pic_num;
+            size_t old_sz = state.points.size();
+
+            ShowAppCustomRendering(state.pictures[state.pic_i], state);
+
+            if (state.file_found && state.points.size() != old_sz) {
+                WriteFile(state.file, state);
+            }
             auto ctx = ImGui::GetCurrentContext();
             //ImGui::Text("%f", ctx->CurrentWindow->FontWindowScale);
 
-            std::string file = file_name;
-            ShowAppMainMenuBar(key_pressed, points, file);
-
-            if (show_hints) {
-                ShowHintsWindow();
-            }
 
             ImGui::End();
 
